@@ -1,0 +1,101 @@
+{
+  "paper": {
+    "title": "A bounded evaluation of a recommender model",
+    "document": "paper.md",
+    "version": "v1.0",
+    "date": "2026-09-16",
+    "audit_scope": "FINAL_SUBMISSION",
+    "related_artifact_version": "run-bundle-v1"
+  },
+  "claims": [
+    {
+      "claim_id": "C1",
+      "section": "Abstract",
+      "location": "Abstract, sentence 4",
+      "claim_text": "The method reaches 78% accuracy on the evaluated datasets.",
+      "claim_type": "PERFORMANCE",
+      "required_evidence": "Table 1 and frozen metric artifacts",
+      "observed_evidence": "Table 1: 0.78; metrics.json: 0.78",
+      "status": "SUPPORTED",
+      "downstream_skill": "",
+      "notes": ""
+    },
+    {
+      "claim_id": "C2",
+      "section": "Introduction",
+      "location": "Contributions, item 1",
+      "claim_text": "We evaluate the method on two named datasets.",
+      "claim_type": "METHOD",
+      "required_evidence": "Methods and experiment setup",
+      "observed_evidence": "Dataset A and Dataset B are defined",
+      "status": "SUPPORTED",
+      "downstream_skill": "",
+      "notes": ""
+    },
+    {
+      "claim_id": "C3",
+      "section": "Conclusion",
+      "location": "Conclusion, sentence 2",
+      "claim_text": "The method improves results on the evaluated datasets.",
+      "claim_type": "GENERALIZATION",
+      "required_evidence": "Results on the evaluated datasets",
+      "observed_evidence": "Results are limited to Dataset A and Dataset B",
+      "status": "SUPPORTED",
+      "downstream_skill": "",
+      "notes": "Bounded to evaluated datasets"
+    }
+  ],
+  "results": {
+    "abstract_accuracy": 0.78,
+    "table_accuracy": 0.78,
+    "raw_artifacts_present": true,
+    "raw_artifact_refs": ["metrics.json"],
+    "baseline": 0.70,
+    "current": 0.72,
+    "reported_improvement": 2.0,
+    "reported_improvement_unit": "percentage_points"
+  },
+  "scope": {
+    "dataset_count": 2,
+    "conclusion_scope": "evaluated datasets"
+  },
+  "seeds": {
+    "methods": 5,
+    "table_runs": 5
+  },
+  "citations": {
+    "in_text": ["1", "2"],
+    "bibliography": ["1", "2"]
+  },
+  "figures": [
+    {
+      "figure_id": "Figure 2",
+      "caption_metric": "Macro-F1",
+      "axis_metric": "Macro-F1",
+      "referenced": true
+    }
+  ],
+  "tables": [
+    {
+      "table_id": "Table 1",
+      "best_marker_correct": true,
+      "metric_direction": "higher"
+    }
+  ],
+  "statistics": [
+    {
+      "statement": "The method improves the observed mean.",
+      "claims_significance": false,
+      "test": "",
+      "p_value": null,
+      "confidence_interval": ""
+    }
+  ],
+  "novelty": [
+    {
+      "statement": "We evaluate a bounded method variant.",
+      "strength": "bounded",
+      "literature_verified": true
+    }
+  ]
+}

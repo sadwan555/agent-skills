@@ -1,0 +1,2 @@
+experiment_id,research_question,dataset,split,model,baseline,independent_variable,controlled_variables,seed,metrics,expected_output,status
+exp-001,,,,,,,,,,,PLANNED

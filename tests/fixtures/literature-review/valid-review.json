@@ -1,0 +1,139 @@
+{
+  "review": {
+    "topic": "Continual learning for recommender systems",
+    "research_question": "How are continual-learning methods evaluated for recommender systems under changing user preferences?",
+    "review_mode": "SYSTEMATIC",
+    "scope": {
+      "target_task": "top-N recommendation under preference drift",
+      "population_or_domain": "consumer interaction streams",
+      "method_family": "continual learning and replay methods",
+      "dataset_or_domain": "public recommender benchmarks",
+      "publication_window": "2020-2026",
+      "languages": ["English"],
+      "publication_types": ["conference paper", "journal article", "preprint with complete methods"]
+    },
+    "inclusion_criteria": ["directly addresses recommendation under temporal change", "reports methodology and evaluation evidence"],
+    "exclusion_criteria": ["unrelated task", "duplicate publication", "secondary discussion without primary evidence"]
+  },
+  "query_variants": [
+    {"category": "EXACT_TERMINOLOGY", "query": "continual learning recommender systems"},
+    {"category": "SYNONYM", "query": "lifelong learning recommendation"},
+    {"category": "HISTORICAL_TERMINOLOGY", "query": "incremental recommender systems"},
+    {"category": "ACRONYM_FULL_NAME", "query": "continual learning CL recommendation"},
+    {"category": "BROADER_METHOD_FAMILY", "query": "online learning adaptive recommendation"},
+    {"category": "TASK_SPECIFIC", "query": "preference drift top-N recommendation"}
+  ],
+  "searches": [
+    {
+      "source": "DBLP",
+      "date": "2026-09-16",
+      "query": "continual learning recommender systems",
+      "filters": "publication year: 2020-2026; language: English",
+      "results_count": 24
+    },
+    {
+      "source": "publisher proceedings",
+      "date": "2026-09-16",
+      "query": "lifelong learning recommendation",
+      "filters": "research papers with accessible methodology",
+      "results_count": 9
+    }
+  ],
+  "papers": [
+    {
+      "paper_id": "P001",
+      "work_id": "work-alpha",
+      "title": "Adaptive Replay for Continual Recommendation",
+      "authors": ["Ada Researcher", "Bo Scientist"],
+      "year": 2023,
+      "venue": "Fictional Conference on Recommender Evidence",
+      "doi": "10.5555/fictional.valid.001",
+      "url": "https://example.invalid/publisher/p001",
+      "publication_status": "conference paper",
+      "stable_identifier": "doi:10.5555/fictional.valid.001",
+      "metadata_verification": "VERIFIED",
+      "source_tier": "PRIMARY_SCHOLARLY_SOURCE",
+      "literature_role": "FOUNDATIONAL",
+      "research_question": "Can replay reduce forgetting in sequential recommendation?",
+      "proposed_contribution": "A fictional adaptive replay strategy.",
+      "task": "continual top-N recommendation",
+      "dataset": "SyntheticStream-1",
+      "sample_or_scale": "10000 fictional interactions",
+      "method": "adaptive replay",
+      "baseline": "fine-tuning; reservoir replay",
+      "metrics": "NDCG@10; forgetting score",
+      "main_results": "Reports improved retained ranking quality under the stated protocol.",
+      "ablations": "Replay capacity and sampling-policy ablations.",
+      "limitations": "Only one fictional interaction stream.",
+      "relevance": "Directly evaluates replay under preference drift.",
+      "evidence_access": "FULL_TEXT",
+      "screening_status": "INCLUDED",
+      "screening_reason": "Matches task, method family, time window, and evidence requirements.",
+      "version_relationship": "canonical conference version",
+      "extracted_sections": ["Abstract", "Introduction", "Method", "Experiment Setup", "Results", "Limitations", "Conclusion"],
+      "evidence_statements": [
+        {"type": "AUTHOR_CLAIM", "statement": "The authors claim replay reduces forgetting."},
+        {"type": "DIRECT_EVIDENCE", "statement": "The fictional results table reports all declared metrics for three seeds."}
+      ],
+      "notes": "Completely fictional local test record."
+    },
+    {
+      "paper_id": "P002",
+      "work_id": "work-beta",
+      "title": "Online Adaptation under Preference Drift",
+      "authors": ["Chen Example", "Dee Analyst"],
+      "year": 2024,
+      "venue": "Journal of Fictional Dynamic Recommendation",
+      "doi": "10.5555/fictional.valid.002",
+      "url": "https://example.invalid/publisher/p002",
+      "publication_status": "journal article",
+      "stable_identifier": "doi:10.5555/fictional.valid.002",
+      "metadata_verification": "VERIFIED",
+      "source_tier": "PRIMARY_SCHOLARLY_SOURCE",
+      "literature_role": "RECENT",
+      "research_question": "When does online adaptation outperform replay?",
+      "proposed_contribution": "A fictional drift-aware online regularizer.",
+      "task": "dynamic recommendation",
+      "dataset": "SyntheticStream-2",
+      "sample_or_scale": "20000 fictional interactions",
+      "method": "online regularization",
+      "baseline": "adaptive replay",
+      "metrics": "Recall@20; adaptation latency",
+      "main_results": "Reports mixed performance across drift regimes.",
+      "ablations": "Regularization-strength and drift-rate ablations.",
+      "limitations": "Synthetic drift only.",
+      "relevance": "Provides a contrasting method family and evaluation protocol.",
+      "evidence_access": "FULL_TEXT",
+      "screening_status": "INCLUDED",
+      "screening_reason": "Matches scope and provides full methodology and results.",
+      "version_relationship": "canonical journal version",
+      "extracted_sections": ["Abstract", "Introduction", "Related Work", "Method", "Experiment Setup", "Results", "Limitations", "Conclusion"],
+      "evidence_statements": [
+        {"type": "AUTHOR_CLAIM", "statement": "The authors claim adaptation depends on drift rate."},
+        {"type": "REVIEWER_INFERENCE", "statement": "The protocols may not be directly comparable because the fictional drift generators differ."}
+      ],
+      "notes": "Completely fictional local test record."
+    }
+  ],
+  "synthesis": [
+    {
+      "theme": "Adaptation under preference drift",
+      "status": "MIXED_EVIDENCE",
+      "agreement": "Both fictional papers report that nonstationarity changes ranking quality.",
+      "disagreement": "The preferred adaptation mechanism differs.",
+      "method_families": "replay versus online regularization",
+      "dataset_differences": "different synthetic streams",
+      "evaluation_differences": "different ranking cutoffs and drift regimes",
+      "limitations": "No shared real-world benchmark."
+    }
+  ],
+  "gaps": [
+    {
+      "observed_evidence": "Neither included fictional paper uses a shared real-world stream.",
+      "scope": "Within this declared search and the two included local fixtures only.",
+      "limitations": "The fixture is not a real or exhaustive literature corpus.",
+      "confidence": "LOW"
+    }
+  ],
+  "novelty_claims": []
+}

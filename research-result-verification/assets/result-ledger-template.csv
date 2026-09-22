@@ -1,0 +1,2 @@
+claim_id,artifact,source_path,json_path,reported_value,aggregation,run_count,selection_policy
+example-claim,Table or Figure,path/to/frozen-output.json,metric.path,,single,1,not-applicable

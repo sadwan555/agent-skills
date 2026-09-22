@@ -1,0 +1,13 @@
+{
+  "compute": {
+    "hardware": "Apple Silicon with 16 GB unified memory",
+    "available_memory_gb": 16,
+    "max_compute_hours": 40,
+    "max_storage_gb": 200,
+    "per_run_hours": 10,
+    "per_run_memory_gb": 24,
+    "storage_per_run_gb": 5,
+    "number_of_runs": 500,
+    "model_scale": "large"
+  }
+}

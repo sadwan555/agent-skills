@@ -1,0 +1,5 @@
+{
+  "claim_target": "augmentation",
+  "variables": {"independent": ["augmentation"]},
+  "changed_factors": ["architecture", "optimizer", "augmentation"]
+}

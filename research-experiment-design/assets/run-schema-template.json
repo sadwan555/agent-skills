@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Research experiment run record",
+  "type": "object",
+  "required": ["experiment_id", "seed", "config", "environment", "metrics", "artifacts", "status"],
+  "properties": {
+    "experiment_id": {"type": "string"},
+    "seed": {"type": "integer"},
+    "config": {"type": "object"},
+    "environment": {"type": "object"},
+    "metrics": {"type": "object"},
+    "artifacts": {"type": "array", "items": {"type": "string"}},
+    "status": {"enum": ["PLANNED", "RUNNING", "SUCCEEDED", "FAILED", "EXCLUDED"]}
+  }
+}

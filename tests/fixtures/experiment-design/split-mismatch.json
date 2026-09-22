@@ -1,0 +1,5 @@
+{
+  "task_type": "time_series",
+  "research_question": "Does model A predict future demand better than model B?",
+  "split": {"method": "random", "time_order_preserved": false}
+}

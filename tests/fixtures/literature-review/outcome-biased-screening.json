@@ -1,0 +1,24 @@
+{
+  "papers": [
+    {
+      "paper_id": "P301",
+      "work_id": "work-negative-result",
+      "title": "A Null Result for Replay",
+      "authors": ["Null Result Author"],
+      "year": 2024,
+      "venue": "Fictional Evidence Journal",
+      "doi": "10.5555/fictional.null.301",
+      "url": "https://example.invalid/publisher/p301",
+      "publication_status": "journal article",
+      "stable_identifier": "doi:10.5555/fictional.null.301",
+      "metadata_verification": "VERIFIED",
+      "source_tier": "PRIMARY_SCHOLARLY_SOURCE",
+      "evidence_access": "FULL_TEXT",
+      "screening_status": "EXCLUDED",
+      "screening_reason": "Result does not support our hypothesis.",
+      "exclusion_basis": "OUTCOME_DIRECTION",
+      "version_relationship": "canonical journal version",
+      "notes": "Fictional negative fixture."
+    }
+  ]
+}

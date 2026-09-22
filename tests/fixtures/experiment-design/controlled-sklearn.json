@@ -1,0 +1,80 @@
+{
+  "project_title": "Controlled sklearn robustness comparison",
+  "research_question": "Does mixed training improve occlusion robustness over standard training on the same classification task?",
+  "hypothesis": "Mixed training will increase macro F1 on the fixed occluded test set relative to standard training.",
+  "falsification_condition": "The hypothesis is unsupported if mean macro F1 across the declared seeds does not exceed the baseline by at least 0.01.",
+  "claim_target": "training_strategy",
+  "task_type": "classification",
+  "dataset": {
+    "name": "Iris-derived occlusion fixture",
+    "version": "1.0",
+    "source": "version-locked sklearn built-in dataset plus deterministic masking",
+    "sample_size": 150,
+    "task_definition": "three-class classification under a fixed masking protocol",
+    "provenance_complete": true
+  },
+  "split": {
+    "method": "stratified_random",
+    "train": "70%",
+    "validation": "15%",
+    "test": "15%",
+    "group_key": "",
+    "time_order_preserved": false,
+    "test_used_for_hyperparameters": false,
+    "leakage_controls": ["deduplicate before split", "fit preprocessing on train only", "freeze test set"]
+  },
+  "baseline": {
+    "primary": {
+      "name": "standard training",
+      "dataset": "Iris-derived occlusion fixture v1.0",
+      "split": "frozen split v1",
+      "preprocessing": "train-fitted standardization plus fixed masking",
+      "training_budget": "1000 optimizer iterations"
+    },
+    "secondary": []
+  },
+  "proposed_method": {
+    "name": "mixed training",
+    "dataset": "Iris-derived occlusion fixture v1.0",
+    "split": "frozen split v1",
+    "preprocessing": "train-fitted standardization plus fixed masking",
+    "training_budget": "1000 optimizer iterations"
+  },
+  "variables": {
+    "independent": ["training strategy"],
+    "controlled": ["dataset", "split", "architecture", "optimizer", "training budget", "seed set"],
+    "dependent": ["macro F1", "accuracy"]
+  },
+  "changed_factors": ["training strategy"],
+  "metrics": {
+    "primary": [{"name": "macro F1", "rationale": "Each class contributes equally under class-specific occlusion."}],
+    "secondary": [{"name": "accuracy", "rationale": "Provides overall classification context."}]
+  },
+  "randomness": {
+    "seeds": [42, 43, 44, 45, 46],
+    "number_of_runs": 5,
+    "report_policy": "mean_std"
+  },
+  "ablation": {"components": [], "interactions": []},
+  "statistical_plan": {
+    "summary": ["mean", "std"],
+    "confidence_interval": "95% bootstrap interval if distributional assumptions are unclear",
+    "hypothesis_tests": [],
+    "effect_size": "mean paired difference"
+  },
+  "stopping_rule": "Complete every predeclared seed for both methods; do not stop after a favorable run.",
+  "compute": {
+    "hardware": "Apple Silicon CPU",
+    "available_memory_gb": 16,
+    "max_compute_hours": 8,
+    "max_storage_gb": 10,
+    "per_run_hours": 0.05,
+    "per_run_memory_gb": 2,
+    "storage_per_run_gb": 0.02,
+    "number_of_runs": 10,
+    "model_scale": "small",
+    "optional_experiments": []
+  },
+  "execution_plan": ["freeze split and configs", "run baseline seed set", "run proposed seed set", "aggregate only after all planned runs"],
+  "experiment_class": "CONFIRMATORY"
+}

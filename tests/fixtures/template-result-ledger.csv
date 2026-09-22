@@ -1,0 +1,10 @@
+claim_id,artifact,source_path,json_path,reported_value,aggregation,run_count,selection_policy
+run01-accuracy,baseline-run-01,runs/baseline-run-01/metrics.json,accuracy,0.9666666666666667,single,1,not-applicable
+run01-f1,baseline-run-01,runs/baseline-run-01/metrics.json,macro_f1,0.9665831244778612,single,1,not-applicable
+run01-confusion-matrix,baseline-run-01,runs/baseline-run-01/metrics.json,confusion_matrix,"[[10,0,0],[0,9,1],[0,0,10]]",single,1,not-applicable
+run02-accuracy,baseline-run-02,runs/baseline-run-02/metrics.json,accuracy,0.9666666666666667,single,1,not-applicable
+run02-f1,baseline-run-02,runs/baseline-run-02/metrics.json,macro_f1,0.9665831244778612,single,1,not-applicable
+run02-confusion-matrix,baseline-run-02,runs/baseline-run-02/metrics.json,confusion_matrix,"[[10,0,0],[0,9,1],[0,0,10]]",single,1,not-applicable
+canonical-accuracy,baseline_metrics.json,artifacts/metrics/baseline_metrics.json,accuracy,0.9666666666666667,single,1,not-applicable
+canonical-f1,baseline_metrics.json,artifacts/metrics/baseline_metrics.json,macro_f1,0.9665831244778612,single,1,not-applicable
+canonical-confusion-matrix,confusion_matrix,artifacts/metrics/baseline_metrics.json,confusion_matrix,"[[10,0,0],[0,9,1],[0,0,10]]",single,1,not-applicable

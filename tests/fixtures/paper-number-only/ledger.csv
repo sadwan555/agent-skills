@@ -1,0 +1,2 @@
+claim_id,artifact,source_path,json_path,reported_value,aggregation,run_count,selection_policy
+paper-only,manuscript,missing-source.json,accuracy,0.90,single,1,not-applicable

@@ -1,0 +1,74 @@
+{
+  "project_title": "Temporal recommender comparison",
+  "research_question": "Does matrix factorization improve top-10 recommendation quality over MostPopular for future interactions?",
+  "hypothesis": "Matrix factorization will improve mean NDCG@10 on future interactions while preserving user-level temporal ordering.",
+  "falsification_condition": "The hypothesis is unsupported if the declared seed average does not improve NDCG@10 over MostPopular.",
+  "claim_target": "algorithm",
+  "task_type": "recommendation",
+  "dataset": {
+    "name": "MovieLens 100K",
+    "version": "stable 100K release",
+    "source": "GroupLens",
+    "sample_size": 100000,
+    "task_definition": "top-10 recommendation for future user interactions",
+    "provenance_complete": true
+  },
+  "split": {
+    "method": "per_user_temporal",
+    "train": "earliest 80% per user",
+    "validation": "next 10% per user",
+    "test": "latest 10% per user",
+    "group_key": "user_id",
+    "time_order_preserved": true,
+    "test_used_for_hyperparameters": false,
+    "leakage_controls": ["deduplicate user-item events", "fit popularity on train only", "exclude future interactions from features"]
+  },
+  "baseline": {
+    "primary": {
+      "name": "MostPopular",
+      "dataset": "MovieLens 100K stable release",
+      "split": "per-user temporal v1",
+      "preprocessing": "identical train-only interaction filtering",
+      "training_budget": "single deterministic fit"
+    },
+    "secondary": []
+  },
+  "proposed_method": {
+    "name": "matrix factorization",
+    "dataset": "MovieLens 100K stable release",
+    "split": "per-user temporal v1",
+    "preprocessing": "identical train-only interaction filtering",
+    "training_budget": "fixed 20 epochs"
+  },
+  "variables": {
+    "independent": ["recommendation algorithm"],
+    "controlled": ["dataset", "temporal split", "candidate protocol", "K", "seed set"],
+    "dependent": ["Recall@10", "NDCG@10", "MRR@10"]
+  },
+  "changed_factors": ["recommendation algorithm"],
+  "metrics": {
+    "primary": [{"name": "NDCG@10", "rationale": "Rewards ranking relevant future items near the top."}],
+    "secondary": [
+      {"name": "Recall@10", "rationale": "Measures coverage of relevant future items."},
+      {"name": "MRR@10", "rationale": "Measures rank of the first relevant item."}
+    ]
+  },
+  "randomness": {"seeds": [11, 22, 33], "number_of_runs": 3, "report_policy": "mean_std"},
+  "ablation": {"components": [], "interactions": []},
+  "statistical_plan": {"summary": ["mean", "std"], "confidence_interval": "none for this small plan", "hypothesis_tests": [], "effect_size": "mean paired difference"},
+  "stopping_rule": "Complete the three declared matrix-factorization seeds before aggregation.",
+  "compute": {
+    "hardware": "Apple Silicon CPU",
+    "available_memory_gb": 16,
+    "max_compute_hours": 12,
+    "max_storage_gb": 20,
+    "per_run_hours": 0.5,
+    "per_run_memory_gb": 4,
+    "storage_per_run_gb": 0.2,
+    "number_of_runs": 4,
+    "model_scale": "small",
+    "optional_experiments": []
+  },
+  "execution_plan": ["freeze temporal split", "fit MostPopular", "run three matrix-factorization seeds", "aggregate predeclared metrics"],
+  "experiment_class": "CONFIRMATORY"
+}

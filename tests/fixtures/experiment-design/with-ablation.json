@@ -1,0 +1,6 @@
+{
+  "ablation": {
+    "components": ["mixed batch sampler", "occlusion consistency"],
+    "interactions": []
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "papers": [
+    {
+      "paper_id": "P201",
+      "work_id": "work-delta",
+      "title": "Delta Recommendation Preprint",
+      "authors": ["Version Author"],
+      "year": 2023,
+      "venue": "arXiv",
+      "doi": "",
+      "url": "https://example.invalid/arxiv/2301.00001",
+      "publication_status": "preprint",
+      "stable_identifier": "arXiv:2301.00001",
+      "metadata_verification": "VERIFIED",
+      "source_tier": "PRIMARY_SCHOLARLY_SOURCE",
+      "evidence_access": "FULL_TEXT",
+      "screening_status": "INCLUDED",
+      "screening_reason": "Matches scope.",
+      "version_relationship": "preprint of work-delta conference version",
+      "notes": "Fictional negative fixture."
+    },
+    {
+      "paper_id": "P202",
+      "work_id": "work-delta",
+      "title": "Delta Recommendation",
+      "authors": ["Version Author"],
+      "year": 2024,
+      "venue": "Fictional Conference",
+      "doi": "10.5555/fictional.delta.202",
+      "url": "https://example.invalid/publisher/p202",
+      "publication_status": "conference paper",
+      "stable_identifier": "doi:10.5555/fictional.delta.202",
+      "metadata_verification": "VERIFIED",
+      "source_tier": "PRIMARY_SCHOLARLY_SOURCE",
+      "evidence_access": "FULL_TEXT",
+      "screening_status": "INCLUDED",
+      "screening_reason": "Matches scope.",
+      "version_relationship": "published version of work-delta preprint",
+      "notes": "Fictional negative fixture."
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "claim_target": "architecture",
+  "baseline": {"primary": {"dataset": "dataset A"}},
+  "proposed_method": {"dataset": "dataset B"}
+}

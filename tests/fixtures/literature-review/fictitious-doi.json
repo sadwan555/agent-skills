@@ -1,0 +1,25 @@
+{
+  "papers": [
+    {
+      "paper_id": "P101",
+      "work_id": "work-fictional-doi",
+      "title": "An Unverifiable Paper Record",
+      "authors": ["Unknown Author"],
+      "year": 2025,
+      "venue": "Unknown Venue",
+      "doi": "10.0000/does-not-exist",
+      "url": "",
+      "publication_status": "unknown",
+      "stable_identifier": "doi:10.0000/does-not-exist",
+      "metadata_verification": "NOT_FOUND",
+      "source_tier": "SECONDARY_INDEX",
+      "evidence_access": "METADATA_ONLY",
+      "screening_status": "PENDING",
+      "screening_reason": "Stable metadata could not be confirmed.",
+      "version_relationship": "unknown",
+      "notes": "Fictional negative fixture."
+    }
+  ],
+  "synthesis": [],
+  "gaps": []
+}

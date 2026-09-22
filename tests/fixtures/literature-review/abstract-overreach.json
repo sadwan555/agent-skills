@@ -1,0 +1,30 @@
+{
+  "papers": [
+    {
+      "paper_id": "P102",
+      "work_id": "work-abstract-only",
+      "title": "Abstract-only Continual Recommendation",
+      "authors": ["Abstract Author"],
+      "year": 2024,
+      "venue": "Fictional Venue",
+      "doi": "10.5555/fictional.abstract.102",
+      "url": "https://example.invalid/abstract/p102",
+      "publication_status": "conference paper",
+      "stable_identifier": "doi:10.5555/fictional.abstract.102",
+      "metadata_verification": "VERIFIED",
+      "source_tier": "PRIMARY_SCHOLARLY_SOURCE",
+      "dataset": "Claimed full dataset details",
+      "method": "Claimed implementation details",
+      "baseline": "Claimed complete baseline setup",
+      "metrics": "Claimed full metric definitions",
+      "main_results": "Claimed exact experiment interpretation",
+      "evidence_access": "ABSTRACT_ONLY",
+      "requested_detail_level": "FULL_EXPERIMENT",
+      "screening_status": "INCLUDED",
+      "screening_reason": "Mistakenly treated abstract as full evidence.",
+      "version_relationship": "single version",
+      "extracted_sections": ["Abstract"],
+      "notes": "Fictional negative fixture."
+    }
+  ]
+}

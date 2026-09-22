@@ -1,0 +1,26 @@
+{
+  "papers": [
+    {
+      "paper_id": "P401",
+      "work_id": "work-blog-summary",
+      "title": "Blog Summary of a Claimed Paper",
+      "authors": ["Blog Writer"],
+      "year": 2025,
+      "venue": "Example Blog",
+      "doi": "",
+      "url": "https://example.invalid/blog/p401",
+      "publication_status": "blog post",
+      "stable_identifier": "",
+      "metadata_verification": "UNVERIFIED",
+      "source_tier": "SECONDARY_DISCUSSION",
+      "research_question": "Claims to summarize recommendation evidence.",
+      "main_results": "Repeats a result without linking primary evidence.",
+      "evidence_access": "FULL_TEXT",
+      "screening_status": "INCLUDED",
+      "screening_reason": "Incorrectly included as formal scholarly evidence.",
+      "version_relationship": "not applicable",
+      "primary_evidence": "",
+      "notes": "Fictional negative fixture."
+    }
+  ]
+}
