@@ -113,4 +113,6 @@ Validate each Skill's frontmatter with the Skill validator supplied by the Agent
 4. Run the complete test suite and Skill validators.
 5. Review the Git diff and commit only a clean, validated state.
 
-No Git remote is configured by default. Review the repository for private material before adding one.
+The canonical remote is the private GitHub repository
+`https://github.com/sadwan555/agent-skills`. Access requires authorization to
+that repository.

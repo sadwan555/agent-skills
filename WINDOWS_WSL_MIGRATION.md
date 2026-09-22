@@ -17,13 +17,23 @@ Python must be version 3.10 or newer. If either command is absent, install it th
 
 ## 2. Transfer the master repository
 
-### Option A: clone a remote added later
+### Option A: clone the private GitHub repository
+
+Authenticate in WSL as a GitHub account that has access to the private
+repository. With GitHub CLI installed:
 
 ```bash
-git clone <reviewed-repository-url> "$HOME/agent-skills"
+gh auth login --hostname github.com --git-protocol https --web
+gh repo clone sadwan555/agent-skills "$HOME/agent-skills"
 ```
 
-This prepared repository intentionally has no remote. Add and publish a remote only after reviewing it for private data.
+If Git credentials are already configured in WSL, clone directly instead:
+
+```bash
+git clone https://github.com/sadwan555/agent-skills.git "$HOME/agent-skills"
+```
+
+The repository is private. A clone attempt without repository access will fail.
 
 ### Option B: copy from a transferred directory
 
@@ -171,7 +181,7 @@ git status --short --branch
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
-If a remote is added later, review changes before pulling. Never replace a dirty working tree or overwrite local Skill changes without resolving them explicitly.
+Review remote changes before pulling. Never replace a dirty working tree or overwrite local Skill changes without resolving them explicitly.
 
 ## Compatibility change record
 
