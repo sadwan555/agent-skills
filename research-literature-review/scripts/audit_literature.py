@@ -62,10 +62,45 @@ def metadata_is_verified(paper: dict[str, Any]) -> bool:
     return paper.get("metadata_verification") == "VERIFIED" and all(paper.get(field) for field in required)
 
 
+def validate_input(specification: dict[str, Any]) -> None:
+    """Reject malformed declared containers instead of silently dropping evidence."""
+    def object_field(record: dict[str, Any], field: str, path: str) -> dict[str, Any]:
+        if field in record and not isinstance(record[field], dict):
+            raise ValueError(f"{path} must be an object")
+        return record.get(field, {})
+
+    def list_field(record: dict[str, Any], field: str, path: str, *, objects: bool = False) -> list[Any]:
+        if field in record and not isinstance(record[field], list):
+            raise ValueError(f"{path} must be an array")
+        values = record.get(field, [])
+        if objects:
+            for index, value in enumerate(values):
+                if not isinstance(value, dict):
+                    raise ValueError(f"{path}[{index}] must be an object")
+        return values
+
+    review = object_field(specification, "review", "review")
+    scope = object_field(review, "scope", "review.scope")
+    for field in ("inclusion_criteria", "exclusion_criteria"):
+        list_field(review, field, f"review.{field}")
+    for field in ("languages", "publication_types"):
+        list_field(scope, field, f"review.scope.{field}")
+    for field in ("papers", "query_variants", "searches", "synthesis", "gaps", "novelty_claims"):
+        list_field(specification, field, field, objects=True)
+    for index, paper in enumerate(specification.get("papers", [])):
+        list_field(paper, "extracted_sections", f"papers[{index}].extracted_sections")
+        statements = list_field(paper, "evidence_statements", f"papers[{index}].evidence_statements", objects=True)
+        for statement_index, statement in enumerate(statements):
+            if "statement" in statement and not isinstance(statement["statement"], str):
+                raise ValueError(f"papers[{index}].evidence_statements[{statement_index}].statement must be a string")
+
+
 def assess(specification: dict[str, Any]) -> tuple[list[dict[str, str]], dict[str, str]]:
     risks: list[dict[str, str]] = []
     papers = [paper for paper in items(specification.get("papers")) if isinstance(paper, dict)]
     derived_screening: dict[str, str] = {}
+    if not any(text(paper.get("screening_status")).upper() == "INCLUDED" for paper in papers):
+        add_risk(risks, "INSUFFICIENT_EVIDENCE", "REVIEW", "No included paper evidence is recorded; empty or pending screening is not synthesis readiness.")
 
     for paper in papers:
         paper_id = text(paper.get("paper_id")) or "UNKNOWN"
@@ -92,6 +127,11 @@ def assess(specification: dict[str, Any]) -> tuple[list[dict[str, str]], dict[st
             )
 
         screening_status = text(paper.get("screening_status")).upper()
+        if screening_status == "INCLUDED" and (
+            access not in READING_DEPTHS - {"METADATA_ONLY"}
+            or not any(text(statement.get("statement")).strip() for statement in items(paper.get("evidence_statements")) if isinstance(statement, dict))
+        ):
+            add_risk(risks, "INSUFFICIENT_EVIDENCE", paper_id, "Included evidence requires a declared reading depth beyond metadata and at least one recorded evidence statement.")
         reason = text(paper.get("screening_reason")).lower()
         exclusion_basis = text(paper.get("exclusion_basis")).upper()
         outcome_phrases = ("support our hypothesis", "unfavorable result", "negative result", "null result")
@@ -377,6 +417,11 @@ def main() -> int:
         return 2
     if not isinstance(specification, dict):
         print(json.dumps({"status": "INVALID_INPUT", "error": "top-level JSON must be an object"}))
+        return 2
+    try:
+        validate_input(specification)
+    except ValueError as error:
+        print(json.dumps({"status": "INVALID_INPUT", "error": str(error)}))
         return 2
 
     args.output_dir.mkdir(parents=True, exist_ok=True)

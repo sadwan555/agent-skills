@@ -37,6 +37,8 @@ Turn a research question into a pre-execution protocol. Preserve the distinction
 
 Use the portable command above for deterministic scaffolding and risk checks. Read [references/design-checklist.md](references/design-checklist.md) before accepting the plan. Use files in `assets/` as portable examples, not as evidence that an experiment ran.
 
+The helper validates the declared structure before writing outputs. Malformed sections, non-finite or negative budgets, duplicate seeds, and inconsistent run counts return structured `INVALID_SPEC` JSON with exit code `2`; no partial plan is emitted.
+
 Blocking risks include `UNFAIR_COMPARISON`, `CONFOUNDED_EXPERIMENT`, `TEST_SET_TUNING`, `SELECTION_BIAS_RISK`, `SPLIT_MISMATCH_RISK`, and `COMPUTE_BUDGET_RISK`. A plan with a blocking risk is `NEEDS_REVISION`, not execution-ready.
 
 ## Boundaries

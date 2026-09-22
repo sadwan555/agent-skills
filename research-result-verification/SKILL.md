@@ -42,6 +42,8 @@ python3 "$SKILL_ROOT/scripts/verify_results.py" \
 
 The script writes separate audit artifacts and does not modify research outputs.
 
+The portable verifier only treats `single` as one run (`run_count=1`). `mean`, `median`, `min`, and `max` are recomputed from a JSON list whose length equals `run_count`; a summary scalar, empty JSON path, unsupported aggregation, malformed row, or missing run count remains `UNVERIFIED`. An empty ledger is rejected so that “nothing checked” cannot look clean.
+
 ## Status Contract
 
 Use only:

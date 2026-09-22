@@ -28,6 +28,8 @@ Build a traceable evidence base around a declared research question. Never inven
 
 Read [references/review-protocol.md](references/review-protocol.md) for the source hierarchy, status contract, reading-depth rules, version handling, and matrix schema. Use the portable command above to audit a structured local record without querying external services.
 
+The helper rejects malformed declared containers as `INVALID_INPUT`. An empty review, an unscreened corpus, or an included paper without reading evidence is `INSUFFICIENT_EVIDENCE`; it is not ready for synthesis.
+
 ## Required outputs
 
 - `search-log.md`

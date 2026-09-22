@@ -4,7 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import hashlib
 import json
+import math
+import re
+from itertools import combinations
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +24,77 @@ LEVEL_NAMES = {
 
 
 def read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    value = json.loads(path.read_text(encoding="utf-8"))
+    def finite(item: Any) -> bool:
+        if isinstance(item, float):
+            return math.isfinite(item)
+        if isinstance(item, dict):
+            return all(finite(child) for child in item.values())
+        if isinstance(item, list):
+            return all(finite(child) for child in item)
+        return True
+    if not finite(value):
+        raise ValueError("non-finite JSON value")
+    return value
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ""
+
+
+def check_manifest(path: Path, project: Path, raw_files: list[Path]) -> tuple[str, str]:
+    """Check recorded provenance and local bytes, without downloading data."""
+    try:
+        manifest = read_json(path)
+        records = manifest.get("datasets") if isinstance(manifest, dict) else None
+        if not isinstance(records, list) or not records:
+            return "UNVERIFIED", "data manifest needs a non-empty datasets list"
+        covered: set[Path] = set()
+        for record in records:
+            required = ("path", "source", "version", "retrieved_at", "license", "sha256")
+            if not isinstance(record, dict) or any(not isinstance(record.get(key), str) or not record[key].strip() for key in required):
+                return "UNVERIFIED", "a dataset record lacks path/source/version/retrieved_at/license/sha256"
+            relative = Path(record["path"])
+            source = (project / relative).resolve()
+            if relative.is_absolute() or not source.is_relative_to(project.resolve()) or not source.is_file():
+                return "UNVERIFIED", "dataset path must name an existing project-relative file"
+            if not re.fullmatch(r"[a-fA-F0-9]{64}", record["sha256"]):
+                return "UNVERIFIED", "dataset sha256 is not a 64-digit hexadecimal digest"
+            digest = hashlib.sha256()
+            with source.open("rb") as handle:
+                for block in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(block)
+            if digest.hexdigest() != record["sha256"].lower():
+                return "FAIL", f"dataset checksum mismatch: {record['path']}"
+            covered.add(source)
+        if not {file.resolve() for file in raw_files}.issubset(covered):
+            return "UNVERIFIED", "data manifest does not cover every local raw file"
+        return "PASS", f"{len(records)} dataset record(s): required metadata present and local SHA-256 matched; external provenance not authenticated"
+    except (OSError, UnicodeError, ValueError) as error:
+        return "UNVERIFIED", f"could not inspect data manifest: {error}"
+
+
+def builtin_evidence(configs: list[Any], sources: list[Path], lock: Path) -> bool:
+    """Recognize the supported sklearn layout; arbitrary name mentions do not count."""
+    datasets = {"iris", "digits", "wine", "breast_cancer"}
+    names = [config.get("dataset") for config in configs]
+    if not names or any(not isinstance(name, str) or name not in datasets for name in names):
+        return False
+    locked = any(re.search(r'(?m)^name\s*=\s*"scikit-learn"\s*$', block) and re.search(r'(?m)^version\s*=\s*"[^"\n]+"', block) for block in read_text(lock).split("[[package]]")[1:])
+    if not locked:
+        return False
+    called = set()
+    for source in sources:
+        try:
+            tree = ast.parse(read_text(source))
+        except SyntaxError:
+            continue
+        loaders = {alias.asname or alias.name: alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module == "sklearn.datasets" for alias in node.names}
+        called.update(loaders.get(node.func.id) for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name))
+    return all(f"load_{name}" in called for name in names)
 
 
 def real_files(path: Path) -> list[Path]:
@@ -31,8 +106,9 @@ def real_files(path: Path) -> list[Path]:
 def find_seed(value: Any) -> bool:
     if isinstance(value, dict):
         for key, child in value.items():
-            if "seed" in key.lower() or "random_state" in key.lower():
-                return child is not None
+            if key.lower() in {"seed", "seeds", "random_seed", "random_state"}:
+                if type(child) is int or (isinstance(child, list) and child and all(type(seed) is int for seed in child)):
+                    return True
             if find_seed(child):
                 return True
     if isinstance(value, list):
@@ -53,33 +129,35 @@ def audit(project: Path, reproduction_evidence: Path | None) -> dict[str, Any]:
     configs: list[Any] = []
     for path in config_paths:
         try:
-            configs.append(read_json(path))
-        except (OSError, json.JSONDecodeError) as error:
+            config = read_json(path)
+            if not isinstance(config, dict) or not config:
+                raise ValueError("configuration must be a non-empty object")
+            configs.append(config)
+        except (OSError, UnicodeError, ValueError) as error:
             issues.append({"code": "INVALID_CONFIG", "severity": "HIGH", "message": f"{path}: {error}"})
 
     source_files = list((project / "src").rglob("*.py")) if (project / "src").is_dir() else []
-    scope_ok = readme.is_file() and bool(config_paths)
+    scope_ok = bool(read_text(readme).strip()) and bool(configs) and len(configs) == len(config_paths)
     add_check(checks, "research-scope", "PASS" if scope_ok else "FAIL", "README and experiment configuration" if scope_ok else "README or experiment configuration missing")
     add_check(checks, "source", "PASS" if source_files else "FAIL", f"{len(source_files)} Python source file(s)")
 
     python_file = project / ".python-version"
-    python_ok = python_file.is_file() and bool(python_file.read_text(encoding="utf-8").strip())
+    python_ok = bool(read_text(python_file).strip())
     add_check(checks, "python-version", "PASS" if python_ok else "FAIL", python_file.name if python_ok else "missing .python-version")
 
     declaration = project / "pyproject.toml"
     lock = project / "uv.lock"
-    lock_ok = declaration.is_file() and lock.is_file()
+    lock_ok = bool(read_text(declaration).strip()) and bool(read_text(lock).strip())
     add_check(checks, "dependency-lock", "PASS" if lock_ok else "FAIL", "pyproject.toml + uv.lock" if lock_ok else "dependency declaration or lockfile missing")
 
-    seed_ok = any(find_seed(config) for config in configs)
+    seed_ok = bool(configs) and all(find_seed(config) for config in configs)
     add_check(checks, "recorded-seed", "PASS" if seed_ok else "FAIL", "seed/random_state found in configuration" if seed_ok else "no recorded seed")
 
     raw_files = real_files(project / "data" / "raw")
     processed_files = real_files(project / "data" / "processed")
     manifest_candidates = (project / "data-manifest.json", project / "data" / "data-manifest.json")
     has_manifest = any(path.is_file() for path in manifest_candidates)
-    config_text = json.dumps(configs, sort_keys=True).lower()
-    builtin_dataset = any(name in config_text for name in ("iris", "digits", "wine", "breast_cancer"))
+    builtin_dataset = builtin_evidence(configs, source_files, lock)
     if processed_files and not raw_files and not has_manifest:
         data_ok = False
         add_check(checks, "data-provenance", "FAIL", "processed data exists without raw inputs or data manifest")
@@ -88,17 +166,20 @@ def audit(project: Path, reproduction_evidence: Path | None) -> dict[str, Any]:
         data_ok = False
         add_check(checks, "data-provenance", "FAIL", "raw data exists but no data manifest was found")
         issues.append({"code": "RAW_DATA_MANIFEST_MISSING", "severity": "HIGH", "message": "Raw data source, version, checksum, retrieval date, or license cannot be established."})
+    elif has_manifest:
+        status, evidence = check_manifest(next(path for path in manifest_candidates if path.is_file()), project, raw_files)
+        data_ok = status == "PASS"
+        add_check(checks, "data-provenance", status, evidence)
+        if not data_ok:
+            issues.append({"code": "DATA_PROVENANCE_UNVERIFIED" if status == "UNVERIFIED" else "DATA_CHECKSUM_MISMATCH", "severity": "HIGH", "message": evidence})
     elif builtin_dataset:
         data_ok = True
-        add_check(checks, "data-provenance", "PASS", "version-locked built-in dataset declared in configuration and source")
-    elif has_manifest:
-        data_ok = True
-        add_check(checks, "data-provenance", "PASS", "data manifest present")
+        add_check(checks, "data-provenance", "PASS", "explicit sklearn dataset, versioned lock entry, and loader call found; runtime use not executed")
     else:
         data_ok = False
         add_check(checks, "data-provenance", "FAIL", "no traceable raw, generated, or built-in dataset evidence")
 
-    readme_text = readme.read_text(encoding="utf-8") if readme.is_file() else ""
+    readme_text = read_text(readme)
     commands_ok = "uv sync --locked" in readme_text and ("experiment" in readme_text or "run" in readme_text)
     add_check(checks, "run-commands", "PASS" if commands_ok else "FAIL", "setup and run commands documented" if commands_ok else "setup or run command missing")
 
@@ -110,25 +191,28 @@ def audit(project: Path, reproduction_evidence: Path | None) -> dict[str, Any]:
                 run_dirs.append(candidate)
     add_check(checks, "recorded-runs", "PASS" if run_dirs else "FAIL", f"{len(run_dirs)} complete run record(s)")
 
-    run_pair_ok = False
-    if len(run_dirs) >= 2:
+    run_records = []
+    for run in run_dirs:
         try:
-            run_pair_ok = read_json(run_dirs[0] / "metrics.json") == read_json(run_dirs[1] / "metrics.json")
-        except (OSError, json.JSONDecodeError):
-            run_pair_ok = False
-    add_check(checks, "run-pair-consistency", "PASS" if run_pair_ok else "FAIL", "two recorded runs have identical metrics" if run_pair_ok else "no consistent pair of complete runs")
+            metrics, config = read_json(run / "metrics.json"), read_json(run / "config.json")
+            if isinstance(metrics, dict) and metrics and isinstance(config, dict) and config:
+                run_records.append((run, config, metrics))
+        except (OSError, UnicodeError, ValueError) as error:
+            issues.append({"code": "INVALID_RUN_RECORD", "severity": "HIGH", "message": f"{run.name}: {error}"})
+    run_pair_ok = any(left[1:] == right[1:] for left, right in combinations(run_records, 2))
+    add_check(checks, "run-pair-consistency", "PASS" if run_pair_ok else "UNVERIFIED", "two recorded runs have identical non-empty configuration and metrics" if run_pair_ok else "no matching pair of valid configuration and metric records")
 
     artifact_lineage_ok = False
     canonical_metrics = project / "artifacts" / "metrics" / "baseline_metrics.json"
     figure_files = real_files(project / "artifacts" / "figures")
-    if run_dirs and canonical_metrics.is_file():
+    if run_records and canonical_metrics.is_file():
         try:
-            artifact_lineage_ok = read_json(canonical_metrics) == read_json(run_dirs[0] / "metrics.json") and bool(figure_files)
-        except (OSError, json.JSONDecodeError):
+            artifact_lineage_ok = any(read_json(canonical_metrics) == record[2] for record in run_records) and bool(figure_files)
+        except (OSError, UnicodeError, ValueError):
             artifact_lineage_ok = False
     add_check(checks, "artifact-lineage", "PASS" if artifact_lineage_ok else "FAIL", "canonical metrics match a recorded run and a figure exists" if artifact_lineage_ok else "canonical metric/figure lineage is incomplete")
 
-    environment_ok = bool(run_dirs) and all("python_version=" in (run / "environment.txt").read_text(encoding="utf-8") and "platform=" in (run / "environment.txt").read_text(encoding="utf-8") for run in run_dirs)
+    environment_ok = bool(run_dirs) and all(re.search(r"(?m)^python_version=\S+", read_text(run / "environment.txt")) and re.search(r"(?m)^platform=\S+", read_text(run / "environment.txt")) for run in run_dirs)
     add_check(checks, "environment-snapshot", "PASS" if environment_ok else "FAIL", "recorded run environment includes Python and platform" if environment_ok else "run environment metadata incomplete")
 
     essentials = scope_ok and bool(source_files) and python_ok and lock_ok and seed_ok and data_ok and commands_ok
@@ -140,23 +224,17 @@ def audit(project: Path, reproduction_evidence: Path | None) -> dict[str, Any]:
     if essentials and run_pair_ok and artifact_lineage_ok and environment_ok:
         level = 3
 
-    level4_ok = False
-    if reproduction_evidence and reproduction_evidence.is_file():
+    independent_note = "no independent reproduction record supplied"
+    if reproduction_evidence:
         try:
             evidence = read_json(reproduction_evidence)
-            level4_ok = all(
-                (
-                    evidence.get("authorized") is True,
-                    evidence.get("independent") is True,
-                    evidence.get("clean_environment") is True,
-                    evidence.get("status") == "MATCH",
-                )
-            )
-        except (OSError, json.JSONDecodeError):
-            level4_ok = False
-    add_check(checks, "independent-clean-reproduction", "PASS" if level4_ok else "NOT_APPLICABLE", "authorized independent clean reproduction matched" if level4_ok else "no qualifying Level 4 evidence supplied")
-    if level == 3 and level4_ok:
-        level = 4
+            if not isinstance(evidence, dict) or not evidence:
+                raise ValueError("reproduction evidence must be a non-empty object")
+            independent_note = "record supplied; authorization, independence, target, acceptance criteria, logs and result lineage require reviewer validation"
+        except (OSError, UnicodeError, ValueError) as error:
+            independent_note = f"could not inspect reproduction evidence: {error}"
+            issues.append({"code": "INVALID_REPRODUCTION_EVIDENCE", "severity": "HIGH", "message": independent_note})
+    add_check(checks, "independent-clean-reproduction", "UNVERIFIED", independent_note)
 
     return {
         "skill": "research-reproducibility",
@@ -164,6 +242,8 @@ def audit(project: Path, reproduction_evidence: Path | None) -> dict[str, Any]:
         "level": level,
         "level_name": LEVEL_NAMES[level],
         "authorized_execution_performed": False,
+        "assessment_scope": "STRUCTURAL_EVIDENCE_ONLY",
+        "limitations": ["Levels are provisional evidence classifications for the supported Python/uv layout.", "File presence and matching metrics do not authenticate execution, dependency resolution, source revision, or figure derivation.", "The helper never awards Level 4; a reviewer must validate the independent reproduction record."],
         "checks": checks,
         "issues": issues,
     }
@@ -177,7 +257,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         f"**Level {report['level']} — {report['level_name']}**",
         "",
-        "This is a technical reproducibility status, not a paper-quality rating.",
+        "This is a provisional structural evidence assessment, not proof of reproducibility or a paper-quality rating.",
         "",
         "## Evidence Checks",
         "",
@@ -192,6 +272,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- **{issue['code']} ({issue['severity']})**: {issue['message']}")
     else:
         lines.append("- No blocking issue detected by the deterministic evidence pass.")
+    lines.extend(["", "## Limits of This Pass", ""])
+    lines.extend(f"- {item}" for item in report["limitations"])
     lines.extend([
         "",
         "## Authorization Record",

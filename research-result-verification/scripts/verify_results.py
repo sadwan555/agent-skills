@@ -7,13 +7,16 @@ import argparse
 import csv
 import json
 import math
+import statistics
 from collections import Counter
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
 
 ALLOWED_STATUSES = {"VERIFIED", "MISMATCH", "UNVERIFIED", "NOT_APPLICABLE"}
 SELECTION_AGGREGATIONS = {"best", "max", "min", "maximum", "minimum"}
+SUPPORTED_AGGREGATIONS = {"single", "mean", "median", "max", "min", "maximum", "minimum"}
 INPUT_FIELDS = (
     "claim_id",
     "artifact",
@@ -32,9 +35,25 @@ def parse_literal(value: str) -> Any:
     if not stripped:
         return ""
     try:
-        return json.loads(stripped)
+        return load_json(stripped)
     except json.JSONDecodeError:
         return stripped
+
+
+def _reject_json_constant(value: str) -> Any:
+    """Reject non-standard JSON constants such as NaN and Infinity."""
+    raise ValueError(f"non-finite JSON constant is not allowed: {value}")
+
+
+def _finite_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError(f"JSON number exceeds the finite numeric range: {value}")
+    return parsed
+
+
+def load_json(value: str) -> Any:
+    return json.loads(value, parse_constant=_reject_json_constant, parse_float=_finite_float)
 
 
 def json_path_get(value: Any, path: str) -> Any:
@@ -53,10 +72,45 @@ def json_path_get(value: Any, path: str) -> Any:
 
 def equivalent(reported: Any, observed: Any, relative_tolerance: float) -> bool:
     if isinstance(reported, bool) or isinstance(observed, bool):
-        return reported == observed
+        return isinstance(reported, bool) and isinstance(observed, bool) and reported is observed
     if isinstance(reported, (int, float)) and isinstance(observed, (int, float)):
-        return math.isclose(float(reported), float(observed), rel_tol=relative_tolerance, abs_tol=relative_tolerance)
-    return reported == observed
+        if any(isinstance(value, float) and not math.isfinite(value) for value in (reported, observed)):
+            return False
+        # Preserve large integers and avoid float conversion or subtraction overflow.
+        left, right = Fraction(reported), Fraction(observed)
+        tolerance = Fraction(relative_tolerance)
+        return abs(left - right) <= max(tolerance, tolerance * max(abs(left), abs(right)))
+    if isinstance(reported, list) and isinstance(observed, list):
+        return len(reported) == len(observed) and all(
+            equivalent(left, right, relative_tolerance) for left, right in zip(reported, observed)
+        )
+    if isinstance(reported, dict) and isinstance(observed, dict):
+        return reported.keys() == observed.keys() and all(
+            equivalent(reported[key], observed[key], relative_tolerance) for key in reported
+        )
+    return type(reported) is type(observed) and reported == observed
+
+
+def aggregate_value(value: Any, aggregation: str, run_count: int) -> Any:
+    if aggregation == "single":
+        return value
+    if not isinstance(value, list) or len(value) != run_count:
+        raise ValueError("Aggregation requires a per-run list with exactly run_count values; a summary scalar is insufficient.")
+    if not all(type(item) in (int, float) for item in value):
+        raise ValueError("Aggregation requires numeric per-run values, excluding booleans, strings, and nulls.")
+    if aggregation == "mean":
+        result = statistics.mean(value)
+    elif aggregation == "median":
+        ordered = sorted(value)
+        midpoint = len(ordered) // 2
+        result = ordered[midpoint] if len(ordered) % 2 else statistics.mean(ordered[midpoint - 1:midpoint + 1])
+    elif aggregation in {"max", "maximum"}:
+        result = max(value)
+    else:
+        result = min(value)
+    if isinstance(result, float) and not math.isfinite(result):
+        raise ValueError("The aggregate is not a finite numeric value.")
+    return result
 
 
 def inside_project(project: Path, source: Path) -> bool:
@@ -67,9 +121,15 @@ def inside_project(project: Path, source: Path) -> bool:
         return False
 
 
-def verify_row(row: dict[str, str], project: Path, relative_tolerance: float) -> dict[str, str]:
-    result = {field: row.get(field, "") for field in INPUT_FIELDS}
+def verify_row(row: dict[str, Any], project: Path, relative_tolerance: float) -> dict[str, str]:
+    result = {field: row[field] if isinstance(row.get(field), str) else "" for field in INPUT_FIELDS}
     result.update({"observed_value": "", "status": "UNVERIFIED", "evidence": "", "risk_flag": ""})
+    if None in row or any(not isinstance(row.get(field), str) for field in INPUT_FIELDS):
+        result.update(evidence="Malformed ledger row: missing or extra CSV cells.")
+        return result
+    if not result["claim_id"].strip() or not result["artifact"].strip():
+        result.update(evidence="claim_id and artifact are required to identify the reported result.")
+        return result
 
     aggregation = result["aggregation"].strip().lower()
     if aggregation in {"not-applicable", "not_applicable", "n/a"}:
@@ -81,12 +141,22 @@ def verify_row(row: dict[str, str], project: Path, relative_tolerance: float) ->
     except ValueError:
         result.update(evidence="run_count is not an integer.")
         return result
+    if run_count < 1:
+        result.update(evidence="run_count must be a positive integer.")
+        return result
 
-    if aggregation in SELECTION_AGGREGATIONS and run_count > 1 and not result["selection_policy"].strip():
+    selection_policy = result["selection_policy"].strip().lower().replace("_", "-")
+    if aggregation in SELECTION_AGGREGATIONS and run_count > 1 and selection_policy in {"", "none", "n/a", "na", "not-applicable", "not applicable"}:
         result.update(
             evidence="Multiple-run best-value selection has no disclosed selection policy.",
             risk_flag="UNDISCLOSED_SELECTION_RISK",
         )
+        return result
+    if aggregation not in SUPPORTED_AGGREGATIONS:
+        result.update(evidence="Unsupported or ambiguous aggregation; use single, mean, median, min, or max with traceable run values.")
+        return result
+    if aggregation == "single" and run_count != 1:
+        result.update(evidence="A single-value check requires run_count=1; it cannot verify a multiple-run summary.")
         return result
 
     source_text = result["source_path"].strip()
@@ -103,19 +173,34 @@ def verify_row(row: dict[str, str], project: Path, relative_tolerance: float) ->
     if source.suffix.lower() != ".json":
         result.update(evidence="Deterministic verifier supports frozen JSON sources; create a provenance-preserving intermediate ledger for other formats.")
         return result
+    if not result["json_path"].strip():
+        result.update(evidence="No JSON path was supplied for the frozen source value.")
+        return result
 
     try:
-        observed = json_path_get(json.loads(source.read_text(encoding="utf-8")), result["json_path"])
-    except (OSError, json.JSONDecodeError, KeyError, IndexError) as error:
+        observed = json_path_get(
+            load_json(source.read_text(encoding="utf-8")),
+            result["json_path"],
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError, KeyError, IndexError) as error:
         result.update(evidence=f"Could not read requested source value: {error}")
         return result
 
-    reported = parse_literal(result["reported_value"])
-    result["observed_value"] = json.dumps(observed, separators=(",", ":"), sort_keys=True)
+    try:
+        reported = parse_literal(result["reported_value"])
+        observed = aggregate_value(observed, aggregation, run_count)
+    except (ValueError, OverflowError) as error:
+        result.update(evidence=f"Could not verify the reported value or aggregation: {error}")
+        return result
+    if reported is None or observed is None:
+        result.update(evidence="Null values cannot establish a reported result.")
+        return result
+    result["observed_value"] = json.dumps(observed, separators=(",", ":"), sort_keys=True, allow_nan=False)
+    operation = "Reported value" if aggregation == "single" else f"Reported {aggregation} recomputed from {run_count} runs"
     if equivalent(reported, observed, relative_tolerance):
-        result.update(status="VERIFIED", evidence=f"Reported value matches {source_text}:{result['json_path']}.")
+        result.update(status="VERIFIED", evidence=f"{operation} matches {source_text}:{result['json_path']}.")
     else:
-        result.update(status="MISMATCH", evidence=f"Reported value differs from {source_text}:{result['json_path']}.")
+        result.update(status="MISMATCH", evidence=f"{operation} differs from {source_text}:{result['json_path']}.")
     return result
 
 
@@ -178,15 +263,20 @@ def main() -> int:
         parser.error(f"project root is not a directory: {project}")
     if not args.ledger.is_file():
         parser.error(f"ledger does not exist: {args.ledger}")
-    if args.relative_tolerance < 0:
-        parser.error("relative tolerance must be non-negative")
+    if not math.isfinite(args.relative_tolerance) or args.relative_tolerance < 0:
+        parser.error("relative tolerance must be a finite non-negative number")
 
-    with args.ledger.open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        missing = set(INPUT_FIELDS) - set(reader.fieldnames or [])
-        if missing:
-            parser.error(f"ledger is missing required columns: {', '.join(sorted(missing))}")
-        rows = [verify_row(row, project, args.relative_tolerance) for row in reader]
+    try:
+        with args.ledger.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            missing = set(INPUT_FIELDS) - set(reader.fieldnames or [])
+            if missing:
+                parser.error(f"ledger is missing required columns: {', '.join(sorted(missing))}")
+            rows = [verify_row(row, project, args.relative_tolerance) for row in reader]
+    except (OSError, UnicodeError, csv.Error) as error:
+        parser.error(f"could not read ledger: {error}")
+    if not rows:
+        parser.error("ledger contains no data rows; no verification was performed")
 
     if any(row["status"] not in ALLOWED_STATUSES for row in rows):
         raise RuntimeError("internal error: unsupported status generated")

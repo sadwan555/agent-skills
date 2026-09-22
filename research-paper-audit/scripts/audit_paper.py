@@ -41,10 +41,80 @@ def normalized(value: Any) -> str:
 
 
 def number(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
+    if isinstance(value, bool):
         return None
+    try:
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def validate_input(manuscript: dict[str, Any]) -> None:
+    """Validate fields consumed by checks before conversion or output creation."""
+    for field in ("paper", "results", "scope", "seeds", "citations"):
+        if field in manuscript and not isinstance(manuscript[field], dict):
+            raise ValueError(f"{field} must be an object")
+    for field in ("claims", "figures", "tables", "statistics", "novelty"):
+        if field not in manuscript:
+            continue
+        if not isinstance(manuscript[field], list):
+            raise ValueError(f"{field} must be an array")
+        for index, record in enumerate(manuscript[field]):
+            if not isinstance(record, dict):
+                raise ValueError(f"{field}[{index}] must be an object")
+    for section, fields in (("scope", ("dataset_count",)), ("seeds", ("methods", "table_runs"))):
+        for field in fields:
+            value = manuscript.get(section, {}).get(field)
+            if value is None:
+                continue
+            parsed = number(value)
+            if parsed is None or not parsed.is_integer() or parsed < 0:
+                raise ValueError(f"{section}.{field} must be a nonnegative integer")
+    results = manuscript.get("results", {})
+    for field in ("abstract_accuracy", "table_accuracy", "baseline", "current", "reported_improvement"):
+        if results.get(field) is not None and number(results[field]) is None:
+            raise ValueError(f"results.{field} must be a finite number")
+    if "raw_artifacts_present" in results and not isinstance(results["raw_artifacts_present"], bool):
+        raise ValueError("results.raw_artifacts_present must be a boolean")
+    for section, fields in (("results", ("raw_artifact_refs",)), ("citations", ("in_text", "bibliography"))):
+        for field in fields:
+            record = manuscript.get(section, {})
+            if field in record and (not isinstance(record[field], list) or any(not isinstance(value, str) for value in record[field])):
+                raise ValueError(f"{section}.{field} must be an array of strings")
+    for index, claim in enumerate(manuscript.get("claims", [])):
+        for field in ("claim_text", "observed_evidence", "required_evidence", "status", "claim_type"):
+            if field in claim and not isinstance(claim[field], str):
+                raise ValueError(f"claims[{index}].{field} must be a string")
+    for section, field in (("tables", "best_marker_correct"), ("statistics", "claims_significance"), ("novelty", "literature_verified")):
+        for index, record in enumerate(manuscript.get(section, [])):
+            if field in record and not isinstance(record[field], bool):
+                raise ValueError(f"{section}[{index}].{field} must be a boolean")
+    for index, figure in enumerate(manuscript.get("figures", [])):
+        for field in ("caption_metric", "axis_metric"):
+            if field in figure and not isinstance(figure[field], str):
+                raise ValueError(f"figures[{index}].{field} must be a string")
+    for index, statement in enumerate(manuscript.get("statistics", [])):
+        for field in ("p_value",):
+            if field in statement and statement[field] is not None and number(statement[field]) is None:
+                raise ValueError(f"statistics[{index}].{field} must be a finite number")
+
+
+def missing_evidence(manuscript: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    claims = manuscript.get("claims", [])
+    if not claims:
+        missing.append("claims: no manuscript claims were recorded")
+    for index, claim in enumerate(claims):
+        if not normalized(claim.get("claim_text")) or not normalized(claim.get("observed_evidence")):
+            missing.append(f"claims[{index}]: claim text or observed evidence is missing")
+    for index, figure in enumerate(manuscript.get("figures", [])):
+        if not normalized(figure.get("caption_metric")) or not normalized(figure.get("axis_metric")):
+            missing.append(f"figures[{index}]: caption or axis metric is missing")
+    for index, table in enumerate(manuscript.get("tables", [])):
+        if not isinstance(table.get("best_marker_correct"), bool):
+            missing.append(f"tables[{index}]: best-marker check is missing")
+    return missing
 
 
 def add_issue(issues: list[dict[str, str]], code: str, location: str, evidence: str, resolution: str) -> None:
@@ -80,7 +150,7 @@ def assess(manuscript: dict[str, Any]) -> list[dict[str, str]]:
         )
 
     scope = manuscript.get("scope", {}) if isinstance(manuscript.get("scope"), dict) else {}
-    dataset_count = int(scope.get("dataset_count", 0) or 0)
+    dataset_count = int(number(scope.get("dataset_count")) or 0)
     conclusion_scope = normalized(scope.get("conclusion_scope"))
     broad_scope = any(term in conclusion_scope for term in ("all dataset", "any dataset", "general", "universal"))
     if dataset_count < 2 and broad_scope:
@@ -95,7 +165,7 @@ def assess(manuscript: dict[str, Any]) -> list[dict[str, str]]:
     seeds = manuscript.get("seeds", {}) if isinstance(manuscript.get("seeds"), dict) else {}
     methods_seeds = seeds.get("methods")
     table_runs = seeds.get("table_runs")
-    if methods_seeds is not None and table_runs is not None and int(methods_seeds) != int(table_runs):
+    if methods_seeds is not None and table_runs is not None and number(methods_seeds) != number(table_runs):
         add_issue(
             issues,
             "SEED_COUNT_MISMATCH",
@@ -180,12 +250,15 @@ def assess(manuscript: dict[str, Any]) -> list[dict[str, str]]:
 
     claim_types = {normalized(item.get("claim_type")) for item in as_list(manuscript.get("claims")) if isinstance(item, dict)}
     needs_result_evidence = bool(claim_types & {"performance", "comparative", "generalization"})
-    if needs_result_evidence and not bool(results.get("raw_artifacts_present")):
+    if needs_result_evidence and not (
+        results.get("raw_artifacts_present") is True
+        and any(reference.strip() for reference in results.get("raw_artifact_refs", []))
+    ):
         add_issue(
             issues,
             "RESULT_VERIFICATION_REQUIRED",
             "Core result evidence",
-            "The manuscript contains result claims but no raw/frozen result artifact is declared.",
+            "The manuscript contains result claims but no raw/frozen result artifact with a traceable reference is declared.",
             "Use research-result-verification against frozen outputs; do not infer verification from manuscript agreement.",
         )
 
@@ -214,6 +287,10 @@ def claim_rows(manuscript: dict[str, Any], issues: list[dict[str, str]]) -> list
         status = str(claim.get("status", "UNVERIFIED")).upper()
         if status not in CLAIM_STATUSES:
             status = "UNVERIFIED"
+        if status in {"SUPPORTED", "PARTIALLY_SUPPORTED"} and (
+            not normalized(claim.get("claim_text")) or not normalized(claim.get("observed_evidence"))
+        ):
+            status = "UNVERIFIED"
         claim_type = str(claim.get("claim_type", "BACKGROUND")).upper()
         if claim_type not in CLAIM_TYPES:
             claim_type = "BACKGROUND"
@@ -221,7 +298,7 @@ def claim_rows(manuscript: dict[str, Any], issues: list[dict[str, str]]) -> list
         if "INTERNAL_RESULT_MISMATCH" in issue_codes and claim_type in {"PERFORMANCE", "COMPARATIVE"}:
             status = "CONTRADICTED"
             downstream_skill = "research-result-verification"
-        elif "RESULT_VERIFICATION_REQUIRED" in issue_codes and claim_type in {"PERFORMANCE", "COMPARATIVE"}:
+        elif "RESULT_VERIFICATION_REQUIRED" in issue_codes and claim_type in {"PERFORMANCE", "COMPARATIVE", "GENERALIZATION"}:
             status = "UNVERIFIED"
             downstream_skill = "research-result-verification"
         if "CONCLUSION_OVERREACH" in issue_codes and claim_type == "GENERALIZATION":
@@ -315,19 +392,28 @@ def write_blockers(output: Path, issues: list[dict[str, str]]) -> None:
     (output / "blocking-issues.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_consistency_map(output: Path, issues: list[dict[str, str]]) -> None:
+def write_consistency_map(manuscript: dict[str, Any], output: Path, issues: list[dict[str, str]]) -> None:
     chain = ("Research Question", "Contribution", "Method", "Experiment", "Result", "Conclusion")
     result_codes = {item["code"] for item in issues}
-    status = {
-        "Research Question": "INSPECTED",
-        "Contribution": "NEEDS_REVIEW" if "LITERATURE_VERIFICATION_REQUIRED" in result_codes else "INSPECTED",
-        "Method": "INSPECTED",
-        "Experiment": "NEEDS_REVIEW" if result_codes & {"SEED_COUNT_MISMATCH", "UNSUPPORTED_STATISTICAL_LANGUAGE"} else "INSPECTED",
-        "Result": "NEEDS_REVIEW" if result_codes & {"INTERNAL_RESULT_MISMATCH", "RESULT_VERIFICATION_REQUIRED", "PERCENTAGE_INTERPRETATION_RISK"} else "INSPECTED",
-        "Conclusion": "NEEDS_REVIEW" if "CONCLUSION_OVERREACH" in result_codes else "INSPECTED",
+    results, seeds, scope = (manuscript.get(key, {}) for key in ("results", "seeds", "scope"))
+    checked = {
+        "Research Question": False,
+        "Contribution": any(normalized(item.get("strength")) for item in manuscript.get("novelty", [])),
+        "Method": False,
+        "Experiment": all(seeds.get(key) is not None for key in ("methods", "table_runs")) or any(item.get("claims_significance") is True for item in manuscript.get("statistics", [])),
+        "Result": all(number(results.get(key)) is not None for key in ("abstract_accuracy", "table_accuracy")) or any(normalized(item.get("claim_type")) in {"performance", "comparative", "generalization"} for item in manuscript.get("claims", [])),
+        "Conclusion": scope.get("dataset_count") is not None and bool(normalized(scope.get("conclusion_scope"))),
     }
+    node_issues = {
+        "Contribution": {"LITERATURE_VERIFICATION_REQUIRED"},
+        "Experiment": {"SEED_COUNT_MISMATCH", "UNSUPPORTED_STATISTICAL_LANGUAGE"},
+        "Result": {"INTERNAL_RESULT_MISMATCH", "RESULT_VERIFICATION_REQUIRED", "PERCENTAGE_INTERPRETATION_RISK"},
+        "Conclusion": {"CONCLUSION_OVERREACH"},
+    }
+    status = {node: "NEEDS_REVIEW" if result_codes & node_issues.get(node, set()) else ("INSPECTED" if checked[node] else "NOT_INSPECTED") for node in chain}
     lines = ["# Manuscript consistency map", "", " → ".join(chain), "", "| Node | Status |", "|---|---|"]
     lines.extend(f"| {node} | `{status[node]}` |" for node in chain)
+    lines.extend(["", "INSPECTED refers only to deterministic checks on declared records; it does not certify manuscript or source review."])
     (output / "consistency-map.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -351,11 +437,12 @@ def write_figure_table_audit(manuscript: dict[str, Any], output: Path) -> None:
         for figure in as_list(manuscript.get("figures")):
             if not isinstance(figure, dict):
                 continue
-            mismatch = normalized(figure.get("caption_metric")) != normalized(figure.get("axis_metric"))
+            complete = bool(normalized(figure.get("caption_metric")) and normalized(figure.get("axis_metric")))
+            mismatch = complete and normalized(figure.get("caption_metric")) != normalized(figure.get("axis_metric"))
             writer.writerow({
                 "artifact_id": figure.get("figure_id", ""), "artifact_type": "FIGURE",
                 "caption_metric": figure.get("caption_metric", ""), "content_metric": figure.get("axis_metric", ""),
-                "status": "CONTENT_ERROR" if mismatch else "CONSISTENT",
+                "status": "CONTENT_ERROR" if mismatch else ("CONSISTENT" if complete else "UNVERIFIED"),
                 "issue_code": "FIGURE_CAPTION_MISMATCH" if mismatch else "",
             })
         for table in as_list(manuscript.get("tables")):
@@ -365,7 +452,7 @@ def write_figure_table_audit(manuscript: dict[str, Any], output: Path) -> None:
             writer.writerow({
                 "artifact_id": table.get("table_id", ""), "artifact_type": "TABLE",
                 "caption_metric": "", "content_metric": table.get("metric_direction", ""),
-                "status": "CONTENT_ERROR" if mismatch else "CONSISTENT",
+                "status": "CONTENT_ERROR" if mismatch else ("CONSISTENT" if table.get("best_marker_correct") is True else "UNVERIFIED"),
                 "issue_code": "TABLE_HIGHLIGHT_ERROR" if mismatch else "",
             })
 
@@ -384,28 +471,35 @@ def main() -> int:
     if not isinstance(manuscript, dict):
         print(json.dumps({"status": "INVALID_INPUT", "error": "top-level JSON must be an object"}))
         return 2
+    try:
+        validate_input(manuscript)
+    except ValueError as error:
+        print(json.dumps({"status": "INVALID_INPUT", "error": str(error)}))
+        return 2
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     issues = assess(manuscript)
     rows = claim_rows(manuscript, issues)
+    missing = missing_evidence(manuscript)
     has_blocker = any(item["severity"] == "BLOCKER" for item in issues)
-    status = "BLOCKED" if has_blocker else ("NEEDS_REVISION" if issues else "NO_BLOCKING_ISSUES_DETECTED")
+    status = "BLOCKED" if has_blocker else ("NEEDS_REVISION" if issues else ("INSUFFICIENT_EVIDENCE" if missing else "NO_BLOCKING_ISSUES_DETECTED"))
     write_claim_matrix(args.output_dir, rows)
     write_paper_audit(manuscript, args.output_dir, rows, issues, status)
     write_blockers(args.output_dir, issues)
-    write_consistency_map(args.output_dir, issues)
+    write_consistency_map(manuscript, args.output_dir, issues)
     write_reference_consistency(manuscript, args.output_dir)
     write_figure_table_audit(manuscript, args.output_dir)
 
     print(json.dumps({
         "status": status,
+        "missing_evidence": missing,
         "issue_codes": [item["code"] for item in issues],
         "severity_counts": dict(Counter(item["severity"] for item in issues)),
         "downstream_skills": sorted({item["downstream_skill"] for item in issues if item["downstream_skill"]}),
         "output_dir": str(args.output_dir),
         "generated_files": sorted(path.name for path in args.output_dir.iterdir() if path.is_file()),
     }, indent=2))
-    return 1 if issues else 0
+    return 1 if issues or missing else 0
 
 
 if __name__ == "__main__":

@@ -25,9 +25,11 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return merged
 
 
-def run_audit(fixture: str) -> tuple[subprocess.CompletedProcess[str], dict[str, Any], Path, tempfile.TemporaryDirectory[str]]:
+def run_audit(fixture: str | dict[str, Any]) -> tuple[subprocess.CompletedProcess[str], dict[str, Any], Path, tempfile.TemporaryDirectory[str]]:
     base = json.loads((FIXTURES / "valid-manuscript.json").read_text(encoding="utf-8"))
-    if fixture == "valid-manuscript":
+    if isinstance(fixture, dict):
+        manuscript = fixture
+    elif fixture == "valid-manuscript":
         manuscript = base
     else:
         override = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
@@ -49,6 +51,65 @@ def run_audit(fixture: str) -> tuple[subprocess.CompletedProcess[str], dict[str,
 
 
 class PaperAuditTests(unittest.TestCase):
+    def test_empty_manuscript_does_not_pass_or_claim_inspection(self) -> None:
+        for manuscript in ({}, {"paper": {"title": "Title only"}}, {"claims": [], "results": {}}):
+            with self.subTest(manuscript=manuscript):
+                completed, summary, output, temporary = run_audit(manuscript)
+                self.addCleanup(temporary.cleanup)
+                self.assertEqual(1, completed.returncode, completed.stderr)
+                self.assertEqual("INSUFFICIENT_EVIDENCE", summary["status"])
+                consistency = (output / "consistency-map.md").read_text(encoding="utf-8")
+                self.assertNotIn("`INSPECTED`", consistency)
+                self.assertIn("`NOT_INSPECTED`", consistency)
+                self.assertTrue(any("no manuscript claims" in item for item in summary["missing_evidence"]))
+
+    def test_missing_claim_or_artifact_evidence_cannot_be_supported(self) -> None:
+        for missing in ("observed_evidence", "raw_artifact_refs"):
+            with self.subTest(missing=missing):
+                manuscript = json.loads((FIXTURES / "valid-manuscript.json").read_text(encoding="utf-8"))
+                if missing == "observed_evidence":
+                    manuscript["claims"][0][missing] = ""
+                else:
+                    manuscript["results"][missing] = []
+                completed, summary, output, temporary = run_audit(manuscript)
+                self.addCleanup(temporary.cleanup)
+                self.assertEqual(1, completed.returncode, completed.stderr)
+                self.assertNotEqual("NO_BLOCKING_ISSUES_DETECTED", summary["status"])
+                with (output / "claim-evidence-matrix.csv").open(encoding="utf-8", newline="") as handle:
+                    rows = {row["claim_id"]: row for row in csv.DictReader(handle)}
+                self.assertEqual("UNVERIFIED", rows["C1"]["status"])
+
+    def test_incomplete_figure_and_table_records_are_not_consistent(self) -> None:
+        manuscript = {"figures": [{"figure_id": "F1"}], "tables": [{"table_id": "T1"}]}
+        completed, summary, output, temporary = run_audit(manuscript)
+        self.addCleanup(temporary.cleanup)
+        self.assertEqual(1, completed.returncode, completed.stderr)
+        self.assertEqual("INSUFFICIENT_EVIDENCE", summary["status"])
+        with (output / "figure-table-audit.csv").open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual({"UNVERIFIED"}, {row["status"] for row in rows})
+
+    def test_malformed_nested_values_produce_structured_invalid_input(self) -> None:
+        cases = (
+            ({"scope": {"dataset_count": "two"}}, "scope.dataset_count"),
+            ({"scope": {"dataset_count": 1.5}}, "scope.dataset_count"),
+            ({"seeds": {"methods": [], "table_runs": 5}}, "seeds.methods"),
+            ({"seeds": {"methods": True}}, "seeds.methods"),
+            ({"results": {"abstract_accuracy": "nan"}}, "results.abstract_accuracy"),
+            ({"results": {"raw_artifacts_present": "false"}}, "results.raw_artifacts_present"),
+            ({"claims": [None]}, "claims[0]"),
+            ({"citations": []}, "citations"),
+        )
+        for manuscript, path in cases:
+            with self.subTest(path=path):
+                completed, summary, output, temporary = run_audit(manuscript)
+                self.addCleanup(temporary.cleanup)
+                self.assertEqual(2, completed.returncode, completed.stderr)
+                self.assertEqual("INVALID_INPUT", summary["status"])
+                self.assertIn(path, summary["error"])
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertFalse(output.exists())
+
     def test_valid_manuscript_generates_required_audit_artifacts(self) -> None:
         completed, summary, output, temporary = run_audit("valid-manuscript")
         self.addCleanup(temporary.cleanup)

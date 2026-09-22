@@ -12,7 +12,7 @@ This repository is the single master copy for five evidence-first research Agent
 | `research-result-verification` | Raw-output-to-number, table, figure, and claim reconciliation |
 | `research-paper-audit` | Final manuscript-level integration audit and routing to the four upstream Skills |
 
-Every Skill retains its complete `SKILL.md`, `scripts/`, `references/`, and `assets/` resources. The deterministic scripts preserve the behavior frozen in source commit `0a9da8d9382e4313c53a9ca3f6b648f74a621624`.
+Every Skill retains its complete `SKILL.md`, `scripts/`, `references/`, and `assets/` resources. The deterministic helpers preserve their valid-input output contracts while rejecting malformed or insufficient evidence conservatively.
 
 ## Repository Layout
 

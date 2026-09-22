@@ -25,9 +25,11 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return merged
 
 
-def run_audit(fixture: str) -> tuple[subprocess.CompletedProcess[str], dict[str, Any], Path, tempfile.TemporaryDirectory[str]]:
+def run_audit(fixture: str | dict[str, Any]) -> tuple[subprocess.CompletedProcess[str], dict[str, Any], Path, tempfile.TemporaryDirectory[str]]:
     base = json.loads((FIXTURES / "valid-review.json").read_text(encoding="utf-8"))
-    if fixture == "valid-review":
+    if isinstance(fixture, dict):
+        specification = fixture
+    elif fixture == "valid-review":
         specification = base
     else:
         override = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
@@ -49,6 +51,43 @@ def run_audit(fixture: str) -> tuple[subprocess.CompletedProcess[str], dict[str,
 
 
 class LiteratureReviewTests(unittest.TestCase):
+    def test_empty_or_unscreened_evidence_cannot_be_ready_for_synthesis(self) -> None:
+        base = json.loads((FIXTURES / "valid-review.json").read_text(encoding="utf-8"))
+        pending = deepcopy(base)
+        for paper in pending["papers"]:
+            paper["screening_status"] = "PENDING"
+        for specification in ({}, {"papers": []}, pending):
+            with self.subTest(specification=specification):
+                completed, summary, _, temporary = run_audit(specification)
+                self.addCleanup(temporary.cleanup)
+                self.assertEqual(1, completed.returncode, completed.stderr)
+                self.assertIn("INSUFFICIENT_EVIDENCE", summary["blocking_risks"])
+                self.assertNotEqual("READY_FOR_SYNTHESIS", summary["status"])
+
+    def test_included_paper_without_reading_evidence_is_not_ready(self) -> None:
+        specification = json.loads((FIXTURES / "valid-review.json").read_text(encoding="utf-8"))
+        specification["papers"][0]["evidence_statements"] = []
+        completed, summary, _, temporary = run_audit(specification)
+        self.addCleanup(temporary.cleanup)
+        self.assertEqual(1, completed.returncode, completed.stderr)
+        self.assertIn("INSUFFICIENT_EVIDENCE", summary["blocking_risks"])
+
+    def test_malformed_nested_records_are_invalid_instead_of_silently_dropped(self) -> None:
+        for specification, path in (
+            ({"papers": {}}, "papers"),
+            ({"papers": [None]}, "papers[0]"),
+            ({"review": {"scope": []}}, "review.scope"),
+            ({"papers": [{"evidence_statements": ["unsupported"]}]}, "papers[0].evidence_statements[0]"),
+        ):
+            with self.subTest(path=path):
+                completed, summary, output, temporary = run_audit(specification)
+                self.addCleanup(temporary.cleanup)
+                self.assertEqual(2, completed.returncode, completed.stderr)
+                self.assertEqual("INVALID_INPUT", summary["status"])
+                self.assertIn(path, summary["error"])
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertFalse(output.exists())
+
     def test_valid_review_generates_traceable_evidence_base(self) -> None:
         completed, summary, output, temporary = run_audit("valid-review")
         self.addCleanup(temporary.cleanup)

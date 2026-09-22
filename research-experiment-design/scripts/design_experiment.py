@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -46,6 +47,115 @@ def as_list(value: Any) -> list[Any]:
     if value in (None, ""):
         return []
     return [value]
+
+
+def mapping(value: Any) -> dict[str, Any]:
+    """Return a mapping section or an empty mapping for optional sections."""
+    return value if isinstance(value, dict) else {}
+
+
+def finite_json_number(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise ValueError("JSON numbers must be finite")
+    return parsed
+
+
+def validate_spec(spec: dict[str, Any]) -> list[str]:
+    """Validate the shape needed by the renderer before any files are written."""
+    errors: list[str] = []
+    mapping_sections = (
+        "dataset", "split", "baseline", "proposed_method", "randomness",
+        "metrics", "statistical_plan", "compute", "variables", "ablation",
+    )
+    for section in mapping_sections:
+        value = spec.get(section)
+        required = section != "ablation"
+        if (required or section in spec) and not isinstance(value, dict):
+            errors.append(f"{section} must be an object")
+
+    baseline = spec.get("baseline")
+    if isinstance(baseline, dict) and not isinstance(baseline.get("primary"), dict):
+        errors.append("baseline.primary must be an object")
+
+    required_text = (
+        "research_question", "hypothesis", "falsification_condition", "claim_target", "task_type", "stopping_rule",
+        "dataset.name", "dataset.version", "dataset.source", "dataset.task_definition",
+        "split.method", "baseline.primary.name", "proposed_method.name", "randomness.report_policy",
+    )
+    for field in required_text:
+        value = nested(spec, *field.split("."))
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} must be a non-empty string")
+
+    experiment_class = spec.get("experiment_class")
+    if experiment_class not in {"PLANNED", "EXPLORATORY", "CONFIRMATORY"}:
+        errors.append("experiment_class must be PLANNED, EXPLORATORY, or CONFIRMATORY")
+
+    for field in ("time_order_preserved", "test_used_for_hyperparameters"):
+        if not isinstance(nested(spec, "split", field, default=None), bool):
+            errors.append(f"split.{field} must be a boolean")
+
+    for field in ("changed_factors", "execution_plan", "variables.independent", "variables.controlled", "variables.dependent"):
+        value = nested(spec, *field.split("."), default=None)
+        if not isinstance(value, list) or not value or any(not isinstance(item, str) or not item.strip() for item in value):
+            errors.append(f"{field} must be a non-empty array of strings")
+
+    for field in ("split.leakage_controls", "statistical_plan.summary", "ablation.components"):
+        value = nested(spec, *field.split("."), default=[])
+        if not isinstance(value, list) or (field == "statistical_plan.summary" and not value) or any(not isinstance(item, str) or not item.strip() for item in value):
+            errors.append(f"{field} must be an array of strings")
+
+    for field in ("statistical_plan.effect_size", "statistical_plan.confidence_interval"):
+        value = nested(spec, *field.split("."), default=None)
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"{field} must be a non-empty string")
+
+    seeds = nested(spec, "randomness", "seeds", default=None)
+    valid_seeds = isinstance(seeds, list) and bool(seeds) and all(type(seed) is int for seed in seeds)
+    if not valid_seeds or len(set(seeds)) != len(seeds):
+        errors.append("randomness.seeds must be a non-empty array of distinct integers")
+    repetitions = nested(spec, "randomness", "number_of_runs", default=None)
+    if type(repetitions) is not int or repetitions <= 0 or (valid_seeds and repetitions != len(seeds)):
+        errors.append("randomness.number_of_runs must equal the number of declared seeds")
+
+    for section in ("primary", "secondary"):
+        metrics = nested(spec, "metrics", section, default=[])
+        if not isinstance(metrics, list) or (section == "primary" and not metrics):
+            errors.append(f"metrics.{section} must be an array of metric objects" + (" with at least one metric" if section == "primary" else ""))
+        elif any(not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip() for item in metrics):
+            errors.append(f"metrics.{section} entries must be objects with a non-empty name")
+
+    compute = spec.get("compute")
+    if isinstance(compute, dict):
+        for field in ("per_run_memory_gb", "available_memory_gb", "per_run_hours", "number_of_runs", "max_compute_hours", "storage_per_run_gb", "max_storage_gb"):
+            value = compute.get(field)
+            if field not in compute and field != "number_of_runs":
+                continue
+            if isinstance(value, bool):
+                errors.append(f"compute.{field} must be numeric")
+                continue
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError, OverflowError):
+                errors.append(f"compute.{field} must be numeric")
+                continue
+            if not math.isfinite(parsed) or parsed < 0:
+                errors.append(f"compute.{field} must be a finite non-negative number")
+            if field == "number_of_runs" and (not parsed.is_integer() or parsed <= 0):
+                errors.append("compute.number_of_runs must be a positive integer")
+    return errors
+
+
+def matrix_models(spec: dict[str, Any]) -> tuple[tuple[str, str, list[int]], ...]:
+    """Use a single baseline fit only when the input explicitly declares it."""
+    seeds = spec["randomness"]["seeds"]
+    baseline = spec["baseline"]["primary"]
+    baseline_seeds = seeds[:1] if comparable_text(baseline.get("training_budget")) == "single deterministic fit" else seeds
+    return (
+        ("baseline", baseline["name"], baseline_seeds),
+        ("proposed", spec["proposed_method"]["name"], seeds),
+    )
 
 
 def comparable_text(value: Any) -> str:
@@ -120,15 +230,19 @@ def assess_risks(spec: dict[str, Any]) -> list[dict[str, str]]:
             f"Task '{task_type}' uses split '{method}' without explicit temporal preservation.",
         )
 
-    compute = nested(spec, "compute", default={})
+    compute = mapping(nested(spec, "compute", default={}))
     if isinstance(compute, dict):
         memory = float(compute.get("per_run_memory_gb", 0) or 0)
         memory_limit = float(compute.get("available_memory_gb", 0) or 0)
-        total_hours = float(compute.get("per_run_hours", 0) or 0) * int(compute.get("number_of_runs", 0) or 0)
+        total_hours = float(compute.get("per_run_hours", 0) or 0) * int(float(compute.get("number_of_runs", 0) or 0))
         hour_limit = float(compute.get("max_compute_hours", 0) or 0)
-        total_storage = float(compute.get("storage_per_run_gb", 0) or 0) * int(compute.get("number_of_runs", 0) or 0)
+        total_storage = float(compute.get("storage_per_run_gb", 0) or 0) * int(float(compute.get("number_of_runs", 0) or 0))
         storage_limit = float(compute.get("max_storage_gb", 0) or 0)
         overruns: list[str] = []
+        matrix_runs = sum(len(seeds) for _, _, seeds in matrix_models(spec))
+        declared_runs = int(float(compute["number_of_runs"]))
+        if declared_runs < matrix_runs:
+            overruns.append(f"run count {declared_runs} is below the {matrix_runs} generated experiment-matrix rows")
         if memory_limit and memory > memory_limit:
             overruns.append(f"memory {memory:g}>{memory_limit:g} GB")
         if hour_limit and total_hours > hour_limit:
@@ -152,13 +266,13 @@ def metric_names(spec: dict[str, Any]) -> list[str]:
 
 def write_plan(spec: dict[str, Any], output: Path, risks: list[dict[str, str]]) -> None:
     status = "NEEDS_REVISION" if risks else "READY_FOR_EXECUTION"
-    dataset = nested(spec, "dataset", default={})
-    split = nested(spec, "split", default={})
-    baseline = nested(spec, "baseline", "primary", default={})
-    proposed = nested(spec, "proposed_method", default={})
-    randomness = nested(spec, "randomness", default={})
-    statistics = nested(spec, "statistical_plan", default={})
-    compute = nested(spec, "compute", default={})
+    dataset = mapping(nested(spec, "dataset", default={}))
+    split = mapping(nested(spec, "split", default={}))
+    baseline = mapping(nested(spec, "baseline", "primary", default={}))
+    proposed = mapping(nested(spec, "proposed_method", default={}))
+    randomness = mapping(nested(spec, "randomness", default={}))
+    statistics = mapping(nested(spec, "statistical_plan", default={}))
+    compute = mapping(nested(spec, "compute", default={}))
     primary_metrics = as_list(nested(spec, "metrics", "primary", default=[]))
     secondary_metrics = as_list(nested(spec, "metrics", "secondary", default=[]))
 
@@ -244,16 +358,11 @@ def write_experiment_matrix(spec: dict[str, Any], output: Path) -> None:
         "experiment_id", "research_question", "dataset", "split", "model", "baseline",
         "independent_variable", "controlled_variables", "seed", "metrics", "expected_output", "status",
     ]
-    seeds = as_list(nested(spec, "randomness", "seeds", default=[])) or [0]
-    models = (
-        ("baseline", nested(spec, "baseline", "primary", "name")),
-        ("proposed", nested(spec, "proposed_method", "name")),
-    )
     with (output / "experiment-matrix.csv").open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         count = 1
-        for role, model in models:
+        for role, model, seeds in matrix_models(spec):
             for seed in seeds:
                 writer.writerow(
                     {
@@ -353,12 +462,17 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        spec = json.loads(args.spec.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+        spec = json.loads(args.spec.read_text(encoding="utf-8"), parse_float=finite_json_number, parse_constant=finite_json_number)
+    except (OSError, ValueError) as error:
         print(json.dumps({"status": "INVALID_SPEC", "error": str(error)}))
         return 2
     if not isinstance(spec, dict):
         print(json.dumps({"status": "INVALID_SPEC", "error": "top-level JSON must be an object"}))
+        return 2
+
+    validation_errors = validate_spec(spec)
+    if validation_errors:
+        print(json.dumps({"status": "INVALID_SPEC", "errors": validation_errors}, indent=2))
         return 2
 
     args.output_dir.mkdir(parents=True, exist_ok=True)

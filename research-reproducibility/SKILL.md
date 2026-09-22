@@ -5,7 +5,7 @@ description: Use when auditing whether a research result can be reconstructed an
 
 # Research Reproducibility
 
-Determine the highest reproducibility level supported by inspectable evidence. Treat technical reproducibility separately from research or paper quality.
+Determine the highest provisional reproducibility level supported by inspectable evidence. Treat technical reproducibility separately from research or paper quality. The helper performs structural evidence checks only; it never awards Level 4, which requires a separately reviewed independent reproduction record.
 
 ## Portable execution
 
@@ -38,7 +38,7 @@ For a deterministic first pass, run:
 python3 "$SKILL_ROOT/scripts/audit_reproducibility.py" --project-root PROJECT
 ```
 
-Use `--json-out` and `--markdown-out` to save separate audit artifacts. The script does not execute the research project.
+Use `--json-out` and `--markdown-out` to save separate audit artifacts. The script does not execute the research project. Its `PASS` checks mean that declared files and metadata passed structural checks; they do not authenticate that an experiment ran, dependencies resolved, or figures came from the recorded run. Treat `UNVERIFIED` and `FAIL` as evidence gaps requiring review.
 
 ## Levels
 

@@ -49,6 +49,8 @@ For a deterministic first pass over a structured local record, use the portable 
 
 The script does not parse arbitrary manuscripts or verify external sources. It generates audit artifacts without modifying the paper or research evidence.
 
+Malformed declared containers return `INVALID_INPUT`. Missing claim/artifact evidence is reported as `INSUFFICIENT_EVIDENCE` or `UNVERIFIED`; deterministic consistency rows marked `INSPECTED` describe only checks actually run and do not certify the manuscript.
+
 ## Required outputs
 
 - `paper-audit.md`
