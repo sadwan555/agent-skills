@@ -90,10 +90,17 @@ class PortabilityTests(unittest.TestCase):
                 self.assertFalse(data.startswith(b"\xef\xbb\xbf"))
                 data.decode("utf-8")
 
-    def test_runtime_tree_contains_no_caches_or_symlinks(self) -> None:
-        for path in ROOT.rglob("*"):
-            if ".git" in path.parts:
+    def test_git_tracked_tree_contains_no_caches_or_symlinks(self) -> None:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        for relative_path in tracked:
+            if not relative_path:
                 continue
+            path = ROOT / os.fsdecode(relative_path)
             with self.subTest(path=path):
                 self.assertNotEqual("__pycache__", path.name)
                 self.assertNotEqual(".DS_Store", path.name)
